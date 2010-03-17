@@ -167,16 +167,16 @@ class csv2ofx(wx.App):
                       
         mapping = self.mappings.GetClientData(self.mappings.GetSelection())
         try:
-          delimiter=mapping['_params']['delimiter']
+            delimiter=mapping['_params']['delimiter']
         except:
-          delimiter=','
+            delimiter=','
         try:
-          skip_last=mapping['_params']['skip_last']
+            skip_last=mapping['_params']['skip_last']
         except:
-          skip_last=0
-        self.grid_table = SimpleCSVGrid(path,delimiter,skip_last)
+            skip_last=0
+        self.grid_table = SimpleCSVGrid(path,mapping,delimiter,skip_last)
         self.grid.SetTable(self.grid_table)
-	self.opened_path = path
+        self.opened_path = path
         
     def OnExport(self,evt):
         if not hasattr(self,'grid_table'):
@@ -197,7 +197,7 @@ class csv2ofx(wx.App):
 	    defaultDir=os.path.dirname(self.opened_path),
             defaultFile=os.path.basename(self.opened_path).replace('csv',format.lower()) 
         )
-	dlg.SetFilterIndex( format=="OFX" and 1 or 0 )
+        dlg.SetFilterIndex( format=="OFX" and 1 or 0 )
         path=None
         try:
             if dlg.ShowModal() == wx.ID_OK:
@@ -206,7 +206,12 @@ class csv2ofx(wx.App):
                 return
         finally:
             dlg.Destroy();
-        
+
+        try:
+            maptype=self.mappings.GetClientData(self.mappings.GetSelection())['_params']['maptype']
+        except:
+            maptype='bank'
+            
         mapping=self.mappings.GetClientData(self.mappings.GetSelection())[format]
         grid=self.grid_table
         
@@ -216,7 +221,7 @@ class csv2ofx(wx.App):
             csv2ofx_export = qif.export
         else:
             raise Exception ( "Unhandled export format: %s" % format )
-        csv2ofx_export(path,mapping,grid)
+        csv2ofx_export(path,mapping,maptype,grid)
         wx.MessageDialog (
             self.frame,
             "%s file saved at:\n%s" % ( format, path ),

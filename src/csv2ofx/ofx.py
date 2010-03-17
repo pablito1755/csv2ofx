@@ -2,13 +2,32 @@
 from datetime import datetime
 import time
 
-def export ( path, mapping, grid):
+def export ( path, mapping, maptype, grid):
     """
         path: path to save the file
         mapping: mapping selected from mappings.py
         data: grid with csv data from csvutils.py
     """
-     
+
+    bank_header = """
+            <STMTRS>
+                <CURDEF>%(CURDEF)s</CURDEF>
+                <BANKACCTFROM>
+                    <BANKID>%(BANKID)s</BANKID>
+                    <ACCTID>%(ACCTID)s</ACCTID>
+                    <ACCTTYPE>CHECKING</ACCTTYPE>
+                </BANKACCTFROM>                    
+            """
+            
+    credit_card_header = """
+            <CCSTMTRS>
+                <CURDEF>%(CURDEF)s</CURDEF>
+                <CCACCTFROM>
+                    <ACCTID>%(ACCTID)s</ACCTID>
+                    <ACCTKEY>%(BANKID)s-%(ACCTID)s</ACCTKEY>
+                </CCACCTFROM>
+            """
+            
     accounts={}
     today = datetime.now().strftime('%Y%m%d')
     for row in range(grid.GetNumberRows()):
@@ -21,6 +40,8 @@ def export ( path, mapping, grid):
         acct['BANKID'] = mapping['BANKID'](row,grid)
         acct['ACCTID'] = mapping['ACCTID'](row,grid)
         acct['TODAY'] = today
+        acct['DTSTART'] = grid.GetMinDate().strftime('%Y%m%d')
+        acct['DTEND'] = grid.GetMaxDate().strftime('%Y%m%d')
         currency = acct.setdefault('CURDEF',mapping['CURDEF'](row,grid))
         if currency != mapping['CURDEF'](row,grid):
             print "Currency not the same."
@@ -56,20 +77,16 @@ def export ( path, mapping, grid):
     )
         
     for acct in accounts.values():
-        out.write(
-            """
-            <STMTRS>
-                <CURDEF>%(CURDEF)s</CURDEF>
-                <BANKACCTFROM>
-                    <BANKID>%(BANKID)s</BANKID>
-                    <ACCTID>%(ACCTID)s</ACCTID>
-                    <ACCTTYPE>CHECKING</ACCTTYPE>
-                </BANKACCTFROM>
+        
+        if maptype == 'creditcard':
+            header = credit_card_header
+        else: #default to 'bank'
+            header = bank_header
+        
+        out.write( (header + """
                 <BANKTRANLIST>
-                    <DTSTART>%(TODAY)s</DTSTART>
-                    <DTEND>%(TODAY)s</DTEND>
-                    
-            """ % acct
+                    <DTSTART>%(DTSTART)s</DTSTART>
+                    <DTEND>%(DTEND)s</DTEND>""" ) % acct
         )
         
         for tran in acct['trans']:
@@ -80,7 +97,6 @@ def export ( path, mapping, grid):
                             <DTPOSTED>%(DTPOSTED)s</DTPOSTED>
                             <TRNAMT>%(TRNAMT)s</TRNAMT>
                             <FITID>%(FITID)s</FITID>
-                            
                 """ % tran
             )
             if tran['CHECKNUM'] is not None and len(tran['CHECKNUM'])>0:
@@ -108,9 +124,12 @@ def export ( path, mapping, grid):
                     <BALAMT>0</BALAMT>
                     <DTASOF>%s</DTASOF>
                 </LEDGERBAL>
-            </STMTRS>
-            """ % today
-        )
+            """ % today )
+
+        if maptype == 'creditcard':
+            out.write("</CCSTMTRS>")
+        else: #default to 'bank'
+            out.write ("</STMTRS>")
         
     out.write ( "</STMTTRNRS></BANKMSGSRSV1></OFX>" )
     out.close()

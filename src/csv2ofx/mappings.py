@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 
 # mapping tells the next functions where to get the data for each row
 # each key in a mapping must return a function that takes
@@ -35,8 +36,10 @@
 
     Special parameters for import use these keys:
 
-        delimiters: delimiter for CSV, default to ','
-        skip_last: number of lines to skip at the end of the CSV file, default to 0
+        delimiters: [optional] delimiter for CSV, default to ','
+        skip_last: [optional] number of lines to skip at the end of the CSV file, default to 0
+        Function_DateStrToDatetime: [Mandatory] Function that must convert from the CSV's date format and return a datetime object.
+        Header_TransactionDate: [Mandatory] Column title for 'date of transaction' field         
 
     OFX export uses these keys:
 
@@ -77,6 +80,16 @@
 
 from csvutils import *
 
+# General local utilities
+def DatetimeToOfxDate(dt):
+    return dt.strftime('%Y%m%d')
+
+def DatetimeToQifDate(dt):
+    return dt.strftime('%m/%d/%Y')
+
+def GenericToDatetime(date):
+    yearlen=len(date.split('/')[-1])
+    return datetime.strptime(date,yearlen==2 and '%m/%d/%y' or '%m/%d/%Y')
 
 def yodlee_dscr(row,grid):
     " use user description for payee 1st, the original description"
@@ -94,17 +107,16 @@ def yodlee_memo(row,grid):
         return "%s - %s - %s" % ( memo, cat, cls)
     return "%s - %s" % ( cat, cls )
 
-def toOFXDate(date):
-    yearlen=len(date.split('/')[-1])
-    return datetime.strptime(date,yearlen==2 and '%m/%d/%y' or '%m/%d/%Y').strftime('%Y%m%d')
-
 yodlee = {
-
+    '_params':{
+        'Function_DateStrToDatetime': GenericToDatetime,            # Mandatory
+        'Header_TransactionDate': 'Date'                            # Mandatory
+    },
     'OFX':{
         'skip':lambda row,grid: fromCSVCol(row,grid,'Split Type') == 'Split',
         'BANKID':lambda row,grid: fromCSVCol(row,grid,'Account Name').split(' - ')[0],
         'ACCTID':lambda row,grid: fromCSVCol(row,grid,'Account Name').split(' - ')[-1], 
-        'DTPOSTED':lambda row,grid: toOFXDate(fromCSVCol(row,grid,'Date')),
+        'DTPOSTED':lambda row,grid: DatetimeToOfxDate(grid.GetDatetime(row)),
         'TRNAMT':lambda row,grid: fromCSVCol(row,grid,'Amount'),
         'FITID':lambda row,grid: fromCSVCol(row,grid,'Transaction Id'),
         'PAYEE':lambda row,grid: yodlee_dscr(row,grid),
@@ -116,7 +128,7 @@ yodlee = {
         'split':lambda row,grid: fromCSVCol(row,grid,'Split Type') == 'Split',
         'Account':lambda row,grid: fromCSVCol(row,grid,'Account Name'),
         'AccountDscr':lambda row,grid: ' '.join(fromCSVCol(row,grid,'Account Name').split('-')[1:]),
-        'Date':lambda row,grid: fromCSVCol(row,grid,'Date'),
+        'Date':lambda row,grid: DatetimeToQifDate(grid.GetDatetime(row)),
         'Payee':lambda row,grid: fromCSVCol(row,grid,'Original Description'),
         'Memo':lambda row,grid: fromCSVCol(row,grid,'User Description') + ' ' + fromCSVCol(row,grid,'Memo'),
         'Category':lambda row,grid: fromCSVCol(row,grid,'Category')+'-'+fromCSVCol(row,grid,'Classification'),
@@ -127,11 +139,15 @@ yodlee = {
 }
 
 cu = {
+    '_params':{
+        'Function_DateStrToDatetime': GenericToDatetime,            # Mandatory
+        'Header_TransactionDate': 'Date'                            # Mandatory
+    },
     'OFX':{
         'skip':lambda row,grid: False,
         'BANKID':lambda row,grid: 'Credit Union',
         'ACCTID':lambda row,grid: 'My Account',
-        'DTPOSTED':lambda row,grid: toOFXDate(fromCSVCol(row,grid,'Date')),
+        'DTPOSTED':lambda row,grid: DatetimeToOfxDate(grid.GetDatetime(row)),
         'TRNAMT':lambda row,grid: fromCSVCol(row,grid,'Amount').replace('$',''),
         'FITID':lambda row,grid: row,
         'PAYEE':lambda row,grid: fromCSVCol(row,grid,'Description'),
@@ -143,7 +159,7 @@ cu = {
         'split':lambda row,grid:False,
         'Account':lambda row,grid: 'Credit Union',
         'AccountDscr':lambda row,grid: 'Credit Union Account',
-        'Date':lambda row,grid: fromCSVCol(row,grid,'Date'),
+        'Date':lambda row,grid: DatetimeToQifDate(grid.GetDatetime(row)),
         'Payee':lambda row,grid: fromCSVCol(row,grid,'Description'),
         'Memo':lambda row,grid: fromCSVCol(row,grid,'Comments'),
         'Category':lambda row,grid:'Unclassified',
@@ -153,29 +169,26 @@ cu = {
     }
 }
 
-def ubs_toOFXDate(date):
-    return datetime.strptime(date,'%d.%m.%Y').strftime('%Y%m%d')
-
-def ubs_toQIFDate(date):
-    return datetime.strptime(date,'%d.%m.%Y').strftime('%m/%d/%Y')
+def ubs_DateStrToDatetime(strDate):
+    return datetime.strptime(strDate,'%d.%m.%Y')
 
 def ubs_toAmount(debit,credit):
     amount = 0
     if debit:
-      amount -= float(debit.replace('\'',''))
+        amount -= float(debit.replace('\'',''))
     if credit:
-      amount += float(credit.replace('\'',''))
+        amount += float(credit.replace('\'',''))
     return amount
 
 def ubs_toPayee(enteredby,recipient,description):
     if enteredby:
-      return enteredby
+        return enteredby
     elif recipient:
-      return recipient
+        return recipient
     elif description:
-      return description
+        return description
     else:
-      return 'UBS'
+        return 'UBS'
 
 def ubs_toDescription(desc1,desc2,desc3):
     return ' / '.join(filter(None, [desc1,desc2,desc3]))
@@ -183,13 +196,15 @@ def ubs_toDescription(desc1,desc2,desc3):
 ubs = {
     '_params':{
         'delimiter': ';',
-        'skip_last': 1
+        'skip_last': 1,
+        'Function_DateStrToDatetime': ubs_DateStrToDatetime,        # Mandatory
+        'Header_TransactionDate': 'Value date'                      # Mandatory
     },
     'OFX':{
         'skip':lambda row,grid: False,
         'BANKID':lambda row,grid: 'UBS',
         'ACCTID':lambda row,grid: fromCSVCol(row,grid,'Description'),
-        'DTPOSTED':lambda row,grid: ubs_toOFXDate(fromCSVCol(row,grid,'Value date')),
+        'DTPOSTED':lambda row,grid: DatetimeToOfxDate(grid.GetDatetime(row)),
         'TRNAMT':lambda row,grid: ubs_toAmount(fromCSVCol(row,grid,'Debit'),fromCSVCol(row,grid,'Credit')),
         'FITID':lambda row,grid: row,
         'PAYEE':lambda row,grid: ubs_toPayee(fromCSVCol(row,grid,'Entered by'),fromCSVCol(row,grid,'Recipient')),
@@ -203,7 +218,7 @@ ubs = {
         'split':lambda row,grid:False,
         'Account':lambda row,grid: 'UBS',
         'AccountDscr':lambda row,grid: fromCSVCol(row,grid,'Description'),
-        'Date':lambda row,grid: ubs_toQIFDate(fromCSVCol(row,grid,'Value date')),
+        'Date':lambda row,grid: DatetimeToQifDate(grid.GetDatetime(row)),
         'Payee':lambda row,grid: ubs_toPayee(fromCSVCol(row,grid,'Entered by'),
                                              fromCSVCol(row,grid,'Recipient'),
                                              fromCSVCol(row,grid,'Description 3')),
@@ -226,12 +241,15 @@ def msmoney_memo(row,grid):
     return "%s - %s" % (cat, cls)
 
 msmoneyrep = {
-
+    '_params':{
+        'Function_DateStrToDatetime': GenericToDatetime,            # Mandatory
+        'Header_TransactionDate': 'Date'                            # Mandatory
+    },
     'OFX':{
         'skip':lambda row,grid: fromCSVCol(row,grid,'Split Type') == 'Split',
         'BANKID':lambda row,grid: fromCSVCol(row,grid,'Account Name').split(' - ')[0],
         'ACCTID':lambda row,grid: fromCSVCol(row,grid,'Account Name').split(' - ')[-1],
-        'DTPOSTED':lambda row,grid: toOFXDate(fromCSVCol(row,grid,'Date')),
+        'DTPOSTED':lambda row,grid: DatetimeToOfxDate(grid.GetDatetime(row)),
         'TRNAMT':lambda row,grid: fromCSVCol(row,grid,'Amount'),
         'FITID':lambda row,grid: fromCSVCol(row,grid,'Num'),
         'PAYEE':lambda row,grid: fromCSVCol(row,grid,'Payee'),
@@ -243,7 +261,8 @@ msmoneyrep = {
         'split':lambda row,grid: fromCSVCol(row,grid,'Date') == '', #split should be determined by absence of date and other fields.
         'Account':lambda row,grid: fromCSVCol(row,grid,'Account'),
         'AccountDscr':lambda row,grid: fromCSVCol(row,grid,'Account'),
-        'Date':lambda row,grid: toOFXDate(fromCSVCol(row,grid,'Date')),
+        'Date':lambda row,grid: DatetimeToQifDate(grid.GetDatetime(row)),
+        #TODO: parse_payee is undefined!
         'Payee':lambda row,grid: parse_payee(row,grid),
         'Memo':lambda row,grid: fromCSVCol(row,grid,'C') + ': ' + fromCSVCol(row,grid,'Memo'),
         'Category':lambda row,grid: fromCSVCol(row,grid,'Category'),
@@ -253,4 +272,78 @@ msmoneyrep = {
     }
 }
 
-all_mappings = {'Yodlee':yodlee, 'Credit Union':cu, 'UBS':ubs, 'MS Money Report (CSV)':msmoneyrep }
+# Citibank Canada Master Card (French statement)
+def CitiFr_DateStrToDatetime(strDate):
+    return datetime.strptime(strDate,'%d/%m/%Y')
+
+CitiMC_French = {
+    '_params':{
+        'maptype': 'creditcard',
+        'skip_last': 1,
+        'Function_DateStrToDatetime': CitiFr_DateStrToDatetime,     # Mandatory
+        'Header_TransactionDate': 'Date de l\'opération'              # Mandatory
+    },
+    'OFX':{
+        'skip':lambda row,grid: False,
+        'BANKID':lambda row,grid: 'Citibank Canada',
+        'ACCTID':lambda row,grid: 'MasterCard Citi',
+        'DTPOSTED':lambda row,grid: grid.GetDatetime(row).strftime('%Y%m%d'),
+        'TRNAMT':lambda row,grid: inverseSign(fromCSVCol(row,grid,'Montant')),
+        'FITID':lambda row,grid: grid.GenerateTransactionId(row),
+        'PAYEE':lambda row,grid: fromCSVCol(row,grid,'Description'),
+        'MEMO':lambda row,grid: '',
+        'CURDEF':lambda row,grid: 'CAD',
+        'CHECKNUM':lambda row,grid: ''
+    },
+    'QIF':{
+        'split':lambda row,grid:False,
+        'Account':lambda row,grid: 'MasterCard Citi',
+        'AccountDscr':lambda row,grid: '',
+        'Date':lambda row,grid: grid.GetDatetime(row).strftime('%m/%d/%Y'),
+        'Payee':lambda row,grid: fromCSVCol(row,grid,'Description'),
+        'Memo':lambda row,grid: '',
+        'Category':lambda row,grid:'Unclassified',
+        'Class':lambda row,grid:'',
+        'Amount':lambda row,grid: inverseSign(fromCSVCol(row,grid,'Montant')),
+        'Number':lambda row,grid: ''
+    }
+}
+
+# Citibank Canada Master Card (English statement)
+def CitiEng_DateStrToDatetime(strDate):
+    return datetime.strptime(strDate,'%m/%d/%Y')
+
+CitiMC_English = {
+    '_params':{
+        'maptype': 'creditcard',                                        # Optional (defaults to 'bank'
+        'skip_last': 1,                                             # Optional
+        'Function_DateStrToDatetime': CitiEng_DateStrToDatetime,    # Mandatory
+        'Header_TransactionDate': 'Transaction Date'                # Mandatory
+    },
+    'OFX':{
+        'skip':lambda row,grid: False,
+        'BANKID':lambda row,grid: 'Citibank Canada',
+        'ACCTID':lambda row,grid: 'Citi MasterCard',
+        'DTPOSTED':lambda row,grid: DatetimeToOfxDate(grid.GetDatetime(row)),
+        'TRNAMT':lambda row,grid: inverseSign(fromCSVCol(row,grid,'Amount')),
+        'FITID':lambda row,grid: grid.GenerateTransactionId(row),
+        'PAYEE':lambda row,grid: fromCSVCol(row,grid,'Description'),
+        'MEMO':lambda row,grid: '',
+        'CURDEF':lambda row,grid: 'CAD',
+        'CHECKNUM':lambda row,grid: ''
+    },
+    'QIF':{
+        'split':lambda row,grid:False,
+        'Account':lambda row,grid: 'Citi MasterCard',
+        'AccountDscr':lambda row,grid: '',
+        'Date':lambda row,grid: DatetimeToQifDate(grid.GetDatetime(row)),
+        'Payee':lambda row,grid: fromCSVCol(row,grid,'Description'),
+        'Memo':lambda row,grid: '',
+        'Category':lambda row,grid:'Unclassified',
+        'Class':lambda row,grid:'',
+        'Amount':lambda row,grid: inverseSign(fromCSVCol(row,grid,'Amount')),
+        'Number':lambda row,grid: ''
+    }
+}
+
+all_mappings = {'Yodlee':yodlee, 'Credit Union':cu, 'UBS':ubs, 'MS Money Report (CSV)':msmoneyrep, 'Citi MasterCard (Français)':CitiMC_French, 'Citi MasterCard (English)': CitiMC_English }

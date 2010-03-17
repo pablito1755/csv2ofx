@@ -1,6 +1,6 @@
 
 
-def export ( path, mapping, grid ):
+def export ( path, mapping, maptype, grid ):
     """
         path: file path to save file
         mapping: mapping for grid data
@@ -23,9 +23,16 @@ def export ( path, mapping, grid ):
             splits = cur_parent.setdefault('splits',[])
             splits.append(tran)
 
+
+    if maptype=='creditcard':
+        header_type = 'CCard'
+    else:
+        header_type = 'Bank'
+        
     o=open(path,'w')
     for a in accounts.values():
-        o.write("!Account\nN%(Account)s\nD%(AccountDscr)s\n^\n!Type:Bank\n" % a)
+        o.write("!Account\nN%(Account)s\nD%(AccountDscr)s\n^\n" % a)
+        o.write("!Type:%s\n" % header_type)
         for t in a['trans']:
             o.write("D%(Date)s\nT%(Amount)s\nP%(Payee)s\nM%(Memo)s\nL%(Category)s/%(Class)s\n" % t )
             for s in t.get('splits',[]):
